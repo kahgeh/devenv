@@ -1,0 +1,33 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Creates ECR
+Parameters:
+  RepositoryName:
+    Type: String
+Resources:
+  Ecr:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Ref RepositoryName
+Outputs:
+  ECRRepository:
+    Description: ECRepository
+    Value:
+      !Join [
+        "/",
+        [
+          !Join [
+            ".",
+            [
+              !Sub "${AWS::AccountId}",
+              "dkr",
+              "ecr",
+              !Sub "${AWS::Region}",
+              "amazonaws",
+              "com",
+            ],
+          ],
+          !Ref RepositoryName,
+        ],
+      ]
+    Export:
+      Name: !Ref "AWS::StackName"

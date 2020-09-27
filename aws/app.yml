@@ -1,0 +1,56 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Parameters:
+  AppName:
+    Type: String
+  Image:
+    Type: String
+  EcsClusterExportName:
+    Type: String
+  EnvironmentName:
+    Type: String
+    Default: devtest
+    Description: The name of the environment to add this service to
+Resources:
+  CloudwatchLogsGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub ${EnvironmentName}-${AppName}
+      RetentionInDays: 1
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ecs-tasks.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/"
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      ContainerDefinitions:
+        - Name: !Ref AppName
+          Essential: true
+          Image: !Ref Image
+          Cpu: 128
+          MemoryReservation: 512
+          PortMappings:
+            - ContainerPort: 80
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref "CloudwatchLogsGroup"
+              awslogs-region: !Ref "AWS::Region"
+              awslogs-stream-prefix: !Ref AppName
+  Service:
+    Type: "AWS::ECS::Service"
+    Properties:
+      Cluster:
+        Fn::ImportValue: !Ref EcsClusterExportName
+      DesiredCount: 1
+      TaskDefinition: !Ref TaskDefinition
+      ServiceName: !Ref AppName

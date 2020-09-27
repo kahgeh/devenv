@@ -1,0 +1,25 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Parameters:
+  HostedZoneName:
+    Type: String
+  DomainName:
+    Type: String
+Resources:
+  PublicIp:
+    Type: AWS::EC2::EIP
+  DnsRecord:
+    Type: AWS::Route53::RecordSetGroup
+    Properties:
+      HostedZoneName: !Ref HostedZoneName
+      RecordSets:
+        - Name: !Ref DomainName
+          Type: A
+          TTL: "900"
+          ResourceRecords:
+            - !Ref PublicIp
+Outputs:
+  PublicIp:
+    Description: Public IP
+    Value: !Ref PublicIp
+    Export:
+      Name: PublicIp

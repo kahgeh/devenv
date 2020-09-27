@@ -1,0 +1,34 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Ecs Cluster
+Parameters:
+  ClusterName:
+    Type: String
+  Environment:
+    Type: String
+Resources:
+  EcsCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Ref ClusterName
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+  EcsConfiguration:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Join
+        - "/"
+        - - /allEnvs
+          - !Ref Environment
+          - infra/ecs
+          - name
+      Type: String
+      Description: ECS Cluster Name
+      Value: !Ref ClusterName
+      Tags: { Key: Environment, Value: !Ref Environment }
+Outputs:
+  EcsCluster:
+    Description: The name of the AWS Region your template was launched in
+    Value: !Ref EcsCluster
+    Export:
+      Name: !Sub "${AWS::StackName}"

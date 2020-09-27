@@ -1,0 +1,239 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Ecs Spot Fleet
+Parameters:
+  ImageId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ecs/optimized-ami/amazon-linux-2/recommended/image_id
+  EcsClusterName:
+    Type: String
+  KeyName:
+    Type: String
+  InstanceType:
+    Type: String
+    Default: m5ad.large
+  SpotPrice:
+    Type: String
+    Default: 0.10
+  TargetCapacity:
+    Type: Number
+    Default: 0
+  Environment:
+    Type: String
+  FleetType:
+    Type: String
+  DomainName:
+    Type: String
+Resources:
+  CloudWatchLogsGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 1
+      LogGroupName: !Sub "${AWS::StackName}-lg"
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Instance Security Group
+      VpcId: !ImportValue DevVpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 1024
+          ToPort: 61000
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+  InstanceProfile:
+    Properties:
+      Path: /
+      Roles:
+        - { Ref: InstanceRole }
+    Type: AWS::IAM::InstanceProfile
+  InstanceRole:
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: ["sts:AssumeRole"]
+            Effect: Allow
+            Principal:
+              Service: [ec2.amazonaws.com]
+        Version: "2012-10-17"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role"
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/CloudWatchAgentServerPolicy"
+      Path: /
+      Policies:
+        - PolicyDocument:
+            Statement:
+              - Action: ec2:DescribeInstances
+                Effect: Allow
+                Resource: "*"
+              - Action:
+                  [
+                    "ecr:DescribeRepositories",
+                    "ecr:ListImages",
+                    "ecr:InitiateLayerUpload",
+                    "ecr:UploadLayerPart",
+                    "ecr:CompleteLayerUpload",
+                    "ecr:PutImage",
+                  ]
+                Effect: Allow
+                Resource:
+                  Fn::Join:
+                    - ""
+                    - - "arn:aws:ecr:"
+                      - { Ref: "AWS::Region" }
+                      - ":"
+                      - { Ref: "AWS::AccountId" }
+                      - :repository/*
+            Version: "2012-10-17"
+          PolicyName: ecs-custom-instance-policy
+    Type: AWS::IAM::Role
+  IamFleetRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Action:
+              - "sts:AssumeRole"
+            Principal:
+              Service: ["spotfleet.amazonaws.com"]
+      Path: "/"
+      ManagedPolicyArns:
+        ["arn:aws:iam::aws:policy/service-role/AmazonEC2SpotFleetTaggingRole"]
+  SpotFleet:
+    Type: AWS::EC2::SpotFleet
+    Properties:
+      SpotFleetRequestConfigData:
+        SpotPrice: !Ref SpotPrice
+        TargetCapacity: !Ref TargetCapacity
+        AllocationStrategy: lowestPrice
+        IamFleetRole: !GetAtt IamFleetRole.Arn
+        LaunchSpecifications:
+          - KeyName: !Ref KeyName
+            ImageId: !Ref ImageId
+            InstanceType: !Ref InstanceType
+            SubnetId:
+              Fn::Join:
+                - ","
+                - - !ImportValue DevSubnetAzAId
+                  - !ImportValue DevSubnetAzBId
+                  - !ImportValue DevSubnetAzCId
+            WeightedCapacity: 1
+            IamInstanceProfile: { Arn: !GetAtt InstanceProfile.Arn }
+            SecurityGroups:
+              - { GroupId: !Ref InstanceSecurityGroup }
+            UserData:
+              Fn::Base64: !Sub |
+                #!/bin/bash -xe
+                yum install -y aws-cli
+                yum install -y amazon-cloudwatch-agent
+
+                cat <<'EOF' >> /etc/ecs/ecs.config
+                ECS_CLUSTER=${EcsClusterName}
+                ECS_ENABLE_CONTAINER_METADATA=true
+                EOF
+
+                curl -fOL https://github.com/kahgeh/whale-disco/releases/download/v0.0.3/whale-disco_0.0.3_Linux_x86_64.tar.gz
+                tar -xvf whale-disco_0.0.3_Linux_x86_64.tar.gz
+                cp whale-disco /usr/bin/
+                chmod a+x /usr/bin/whale-disco
+
+                rm whale-disco_0.0.3_Linux_x86_64.tar.gz
+                rm whale-disco
+                rm Readme.MD
+
+                mkdir /var/log/whale-disco
+                cat <<'EOF' >> /lib/systemd/system/whale-disco.service
+                [Unit]
+                Description=Whale Disco - Docker Based Discovery
+                After=network.target
+                StartLimitIntervalSec=0
+                [Service]
+                Type=simple
+                Restart=always
+                RestartSec=1
+                User=root
+                StandardOutput=file:/var/log/whale-disco/logs.log
+                StandardError=file:/var/log/whale-disco/logs.log
+                ExecStart=/usr/bin/whale-disco -domain=${DomainName}
+
+                [Install]
+                WantedBy=multi-user.target
+                EOF
+
+                mkdir /cloudwatch
+                cat <<'EOF' >> /cloudwatch/config.json
+                {
+                  "agent": {
+                    "metrics_collection_interval": 60,
+                    "logfile": "/opt/aws/amazon-cloudwatch-agent/logs/amazon-cloudwatch-agent.log"
+                  },
+                  "logs": {
+                    "logs_collected": {
+                      "files": {
+                        "collect_list": [
+                          {
+                            "file_path": "/var/log/${AWS::StackName}/logs.log",
+                            "log_group_name": "/${AWS::StackName}-lg/",
+                            "log_stream_name": "whale-disco",
+                            "timezone": "UTC"
+                          }
+                        ]
+                      }
+                    },
+                    "log_stream_name": "whale-disco",
+                    "force_flush_interval" : 60
+                  }
+                }
+                EOF
+
+                /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c file:/cloudwatch/config.json -s
+                systemctl start whale-disco.service
+  SpotFleetConfiguration:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Join
+        - "/"
+        - - /allEnvs
+          - !Ref Environment
+          - infra/spotfleet
+          - !Ref FleetType
+      Type: String
+      Description: !Sub "Spot fleet for ${FleetType} Instances"
+      Value: !Ref SpotFleet
+      Tags: { Key: Environment, Value: !Ref Environment }
+Outputs:
+  AwsRegionName:
+    Description: The name of the AWS Region your template was launched in
+    Value:
+      Ref: AWS::Region
+    Export:
+      Name: !Sub "${AWS::StackName}-region"
+  CloudWatchLogsGroupName:
+    Description: Name of the CloudWatch Logs Group
+    Value:
+      Ref: CloudWatchLogsGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-lg"
+  SpotFleetRequestId:
+    Description: The Spot fleet Request Id
+    Value:
+      Ref: SpotFleet
+    Export:
+      Name: !Sub "${AWS::StackName}-spotfleetrequest"
+  InstanceSecurityGroup:
+    Description: Instance security group
+    Value:
+      Ref: InstanceSecurityGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-SecurityGroup"

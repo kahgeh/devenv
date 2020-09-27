@@ -1,0 +1,119 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Resources:
+  DevVpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      InstanceTenancy: default
+      Tags:
+        - Key: "Name"
+          Value: "DevVpc"
+  DevInternetGateway:
+    Type: "AWS::EC2::InternetGateway"
+    Properties:
+      Tags:
+        - Key: "Name"
+          Value: "DevInternetGateway"
+  DevSubnetAzA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: "10.0.2.0/24"
+      AvailabilityZone: !Select
+        - 0
+        - Fn::GetAZs: !Ref "AWS::Region"
+      VpcId: !Ref DevVpc
+      MapPublicIpOnLaunch: true
+  DevSubnetAzB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: "10.0.3.0/24"
+      AvailabilityZone: !Select
+        - 1
+        - Fn::GetAZs: !Ref "AWS::Region"
+      VpcId: !Ref DevVpc
+      MapPublicIpOnLaunch: true
+  DevSubnetAzC:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: "10.0.4.0/24"
+      AvailabilityZone: !Select
+        - 2
+        - Fn::GetAZs: !Ref "AWS::Region"
+      VpcId: !Ref DevVpc
+      MapPublicIpOnLaunch: true
+  DevRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref DevVpc
+  DevInternetGatewayAttachment:
+    Type: "AWS::EC2::VPCGatewayAttachment"
+    Properties:
+      VpcId: !Ref DevVpc
+      InternetGatewayId: !Ref DevInternetGateway
+  DevVpcToInternetRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref DevRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref DevInternetGateway
+  DevSubnetAzARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref DevRouteTable
+      SubnetId: !Ref DevSubnetAzA
+  DevSubnetAzBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref DevRouteTable
+      SubnetId: !Ref DevSubnetAzB
+  DevSubnetAzCRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref DevRouteTable
+      SubnetId: !Ref DevSubnetAzC
+  DevDefaultSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "SSH and HTTP/S"
+      VpcId: !Ref DevVpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+Outputs:
+  DevVpcId:
+    Description: Vpc Id for Dev environment
+    Value: !Ref DevVpc
+    Export:
+      Name: DevVpcId
+  DevSubnetAzAId:
+    Description: Subnet for Dev environment
+    Value: !Ref DevSubnetAzA
+    Export:
+      Name: DevSubnetAzAId
+  DevSubnetAzBId:
+    Description: Subnet for Dev environment
+    Value: !Ref DevSubnetAzB
+    Export:
+      Name: DevSubnetAzBId
+  DevSubnetAzCId:
+    Description: Subnet for Dev environment
+    Value: !Ref DevSubnetAzC
+    Export:
+      Name: DevSubnetAzCId
+  DevDefaultSecurityGroup:
+    Description: Default security group for Dev environment
+    Value: !Ref DevDefaultSecurityGroup
+    Export:
+      Name: DevDefaultSecurityGroup

@@ -1,0 +1,102 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Parameters:
+  AppName:
+    Type: String
+    Default: front-proxy
+  Image:
+    Type: String
+  EcsClusterExportName:
+    Type: String
+  EnvironmentName:
+    Type: String
+    Default: devtest
+    Description: The name of the environment to add this service to
+  ParamStoreKeyArn:
+    Type: AWS::SSM::Parameter::Value<String>
+Resources:
+  CloudwatchLogsGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub ${EnvironmentName}-${AppName}
+      RetentionInDays: 1
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ecs-tasks.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: AllowGetParam
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Action:
+                  - ssm:GetParametersByPath
+                  - ssm:GetParameters
+                  - ssm:GetParameter
+                Effect: Allow
+                Resource:
+                  - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/allEnvs/${EnvironmentName}/ssl/*
+                  - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/allEnvs/${EnvironmentName}/ssl
+        - PolicyName: AllowDecryptParam
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Action: kms:Decrypt
+                Effect: Allow
+                Resource: !Ref ParamStoreKeyArn
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      ContainerDefinitions:
+        - Name: !Ref AppName
+          Essential: 'true'
+          Image: !Ref Image
+          Cpu: 128
+          MemoryReservation: 512
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref 'CloudwatchLogsGroup'
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: !Sub "proxy"
+          PortMappings:
+            - ContainerPort: 80
+              HostPort: 80
+            - ContainerPort: 443
+              HostPort: 443
+            - ContainerPort: 9901
+              HostPort: 9901
+          Environment:
+            - Name: AWS_DEFAULT_REGION
+              Value: !Ref AWS::Region
+            - Name: AWS_REGION
+              Value: !Ref AWS::Region
+  Service:
+    Type: "AWS::ECS::Service"
+    Properties:
+      Cluster:
+        Fn::ImportValue: !Ref EcsClusterExportName
+      DesiredCount: 1
+      TaskDefinition: !Ref TaskDefinition
+      ServiceName: !Ref AppName
+  Config:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Join
+        - "/"
+        - - /allEnvs
+          - !Ref EnvironmentName
+          - apps
+          - !Ref AppName
+          - serviceArn
+      Type: String
+      Description: front proxy service arn
+      Value: !Ref Service
