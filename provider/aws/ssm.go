@@ -27,7 +27,7 @@ func (session *Session) NewSsmSession() *SsmSession {
 	}
 }
 
-func (session *SsmSession) GetParamterValue(name string) (value *string, err error) {
+func (session *SsmSession) GetParameterValue(name string) (value *string, err error) {
 	api := session.api
 
 	request := api.GetParameterRequest(&ssm.GetParameterInput{
@@ -40,5 +40,22 @@ func (session *SsmSession) GetParamterValue(name string) (value *string, err err
 		return
 	}
 	value = response.GetParameterOutput.Parameter.Value
+	return
+}
+
+func (session *SsmSession) SaveParameter(name string, value string) (version *int64, err error) {
+	api := session.api
+
+	request := api.PutParameterRequest(&ssm.PutParameterInput{
+		Name:      aws.String(name),
+		Value:     &value,
+		Type:      ssm.ParameterTypeString,
+		Overwrite: aws.Bool(true),
+	})
+	response, err := request.Send(ctx.GetContext())
+	if err != nil {
+		return
+	}
+	version = response.Version
 	return
 }

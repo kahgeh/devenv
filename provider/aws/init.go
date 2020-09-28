@@ -215,15 +215,36 @@ func (session *Session) savePstoreKey(keyName string, path string) {
 	log.Succeed()
 }
 
+func (session *Session) saveWhaleDiscoveryVersion(envName, version string) {
+	log := logger.NewTaskLogger()
+	defer log.LogDone()
+	ssmSession := session.NewSsmSession()
+	parameterName := fmt.Sprintf("/allEnvs/%s/WhaleDiscoVersion", envName)
+	parameterVersion, err := ssmSession.SaveParameter(parameterName, version)
+	if err != nil {
+		log.Failf("cannot save discovery service version, %s", err.Error())
+		return
+	}
+	if parameterVersion == nil {
+		log.Failf("cannot save discovery service version, the parameter version returned was empty")
+		return
+	}
+	log.Infof("discovery service version saved in param store %q for the %v time", parameterName, *parameterVersion)
+	log.Succeed()
+
+}
+
 func (session *Session) Initialise(parameters *types.InitialisationParameters) {
 	log := logger.New()
 	defer log.LogDone()
 	envName := parameters.EnvironmentName
 	domainName := parameters.DomainName
+	discoveryServiceVersion := parameters.DiscoveryServiceVersion
 	session.createKeyPair()
 	session.createVpc()
 	session.createEcsCluster(envName)
 	session.createEcsSpotFleet(envName, domainName)
 	pstoreKeyPath := fmt.Sprintf(string(TemplateParamStoreKeyPath), envName)
 	session.savePstoreKey("alias/aws/ssm", pstoreKeyPath)
+	session.saveWhaleDiscoveryVersion(envName, discoveryServiceVersion)
 }

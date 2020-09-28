@@ -96,6 +96,18 @@ Resources:
                       - :repository/*
             Version: "2012-10-17"
           PolicyName: ecs-custom-instance-policy
+        - PolicyName: AllowGetParam
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Action:
+                  - ssm:GetParametersByPath
+                  - ssm:GetParameters
+                  - ssm:GetParameter
+                Effect: Allow
+                Resource:
+                  - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/allEnvs/${Environment}/*
+                  - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/allEnvs/${Environment}/
     Type: AWS::IAM::Role
   IamFleetRole:
     Type: AWS::IAM::Role
@@ -137,18 +149,22 @@ Resources:
                 #!/bin/bash -xe
                 yum install -y aws-cli
                 yum install -y amazon-cloudwatch-agent
-
+                region=$(curl http://169.254.169.254/latest/meta-data/placement/region)
+                export AWS_REGION=$region
+                export AWS_DEFAULT_REGION=$region
+                export AWS_PAGER=""
+                WHALE_DISCO_VERSION=$(aws ssm get-parameter --name /allEnvs/${Environment}/WhaleDiscoVersion --query "Parameter.Value" --output text)
                 cat <<'EOF' >> /etc/ecs/ecs.config
                 ECS_CLUSTER=${EcsClusterName}
                 ECS_ENABLE_CONTAINER_METADATA=true
                 EOF
 
-                curl -fOL https://github.com/kahgeh/whale-disco/releases/download/v0.0.3/whale-disco_0.0.3_Linux_x86_64.tar.gz
-                tar -xvf whale-disco_0.0.3_Linux_x86_64.tar.gz
+                curl -fOL https://github.com/kahgeh/whale-disco/releases/download/v${!WHALE_DISCO_VERSION}/whale-disco_${!WHALE_DISCO_VERSION}_Linux_x86_64.tar.gz
+                tar -xvf whale-disco_${!WHALE_DISCO_VERSION}_Linux_x86_64.tar.gz
                 cp whale-disco /usr/bin/
                 chmod a+x /usr/bin/whale-disco
 
-                rm whale-disco_0.0.3_Linux_x86_64.tar.gz
+                rm whale-disco_${!WHALE_DISCO_VERSION}_Linux_x86_64.tar.gz
                 rm whale-disco
                 rm Readme.MD
 

@@ -228,14 +228,14 @@ func (session *Session) deployFrontProxy(image string, envName string) {
 	if stackDescription != nil {
 		ssmSession := session.NewSsmSession()
 		log.Info("getting app details...")
-		cluster, err := ssmSession.GetParamterValue(fmt.Sprintf("/allEnvs/%s/infra/ecs/name", envName))
+		cluster, err := ssmSession.GetParameterValue(fmt.Sprintf("/allEnvs/%s/infra/ecs/name", envName))
 		if err != nil {
 			log.Debug(err.Error())
 			log.Fail("fail to get cluster name details")
 			return
 		}
 
-		serviceArn, err := ssmSession.GetParamterValue(fmt.Sprintf("/allEnvs/%s/apps/%s/serviceArn", envName, appName))
+		serviceArn, err := ssmSession.GetParameterValue(fmt.Sprintf("/allEnvs/%s/apps/%s/serviceArn", envName, appName))
 		if err != nil {
 			log.Debug(err.Error())
 			log.Fail("fail to get service details")

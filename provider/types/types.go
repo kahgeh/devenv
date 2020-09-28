@@ -17,9 +17,10 @@ type DeployParameters struct {
 }
 
 type InitialisationParameters struct {
-	DomainName      string
-	DomainEmail     string
-	EnvironmentName string
+	DomainName              string
+	DomainEmail             string
+	EnvironmentName         string
+	DiscoveryServiceVersion string
 }
 
 type StartParameters struct {

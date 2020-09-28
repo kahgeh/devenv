@@ -17,17 +17,22 @@ package cmd
 
 import (
 	"fmt"
+	cmdTypes "github.com/kahgeh/devenv/cmd/types"
 	"github.com/kahgeh/devenv/fixed"
 	"github.com/kahgeh/devenv/logger"
 	"github.com/kahgeh/devenv/provider/types"
 	"github.com/kahgeh/devenv/utils"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"os"
 	"runtime/debug"
 )
 
 const (
 	baseUrl string = "https://raw.githubusercontent.com/kahgeh/devenv/master"
+)
+const (
+	argDiscoveryServiceVersion cmdTypes.ArgName = "discovery-service-version"
 )
 
 var cloudProviderFiles = map[string][]string{"aws": {"vpc.yml", "ecsCluster.yml",
@@ -53,7 +58,7 @@ func initialiseConfig() {
 		log.Debug(err.Error())
 		log.Failf("fail to ensure %q exist", cloudProviderFolderPath)
 	}
-	frontProxyFolderPath :=fmt.Sprintf("%v/front-proxy", cloudProviderFolderPath)
+	frontProxyFolderPath := fmt.Sprintf("%v/front-proxy", cloudProviderFolderPath)
 	log.Infof("ensuring front proxy folder '%s' exists...", frontProxyFolderPath)
 	err = utils.CreateFolderIfNotExist(frontProxyFolderPath)
 	if err != nil {
@@ -77,6 +82,14 @@ var initCmd = &cobra.Command{
 	Run:   initialise,
 }
 
+func extractInitParameters() (domainName string, domainEmail string, envName string, discoveryServiceVersion string) {
+	domainName = viper.GetString("domain-name")
+	domainEmail = viper.GetString("domain-email")
+	envName = viper.GetString("env-name")
+	discoveryServiceVersion = viper.GetString(string(argDiscoveryServiceVersion))
+	return
+}
+
 func initialise(_ *cobra.Command, args []string) {
 	startLog()
 	log := logger.New()
@@ -92,16 +105,22 @@ func initialise(_ *cobra.Command, args []string) {
 		initialiseConfig()
 		return
 	}
-	domainName := viper.GetString("domain-name")
-	domainEmail := viper.GetString("domain-email")
-	envName := viper.GetString("env-name")
+
+	domainName, domainEmail, envName, discoveryServiceVersion := extractInitParameters()
 	createSession().Initialise(&types.InitialisationParameters{
-		DomainName:  domainName,
-		DomainEmail: domainEmail,
-		EnvironmentName: envName,
+		DomainName:              domainName,
+		DomainEmail:             domainEmail,
+		EnvironmentName:         envName,
+		DiscoveryServiceVersion: discoveryServiceVersion,
 	})
 }
 
 func init() {
 	rootCmd.AddCommand(initCmd)
+	deployCmd.PersistentFlags().String(string(argDiscoveryServiceVersion), "0.0.1", "--discovery-service-version <relative or absolute path>")
+	err := viper.BindPFlags(deployCmd.PersistentFlags())
+	if err != nil {
+		fmt.Printf("fail to bind command arguments\n %s", err.Error())
+		os.Exit(logger.ExitFailureStatus)
+	}
 }
