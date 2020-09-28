@@ -83,7 +83,9 @@ static_resources:
                 filename: "/etc/letsencrypt/live/{{DOMAIN_NAME}}/fullchain.pem"
               private_key:
                 filename: "/etc/letsencrypt/live/{{DOMAIN_NAME}}/privkey.pem"
-
+            alpn_protocols: ["h2,http/1.1"]
+            tls_params:
+              tls_minimum_protocol_version: TLSv1_2
   clusters:
     - connect_timeout: 1s
       type: STATIC
